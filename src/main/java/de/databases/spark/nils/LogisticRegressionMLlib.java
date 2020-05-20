@@ -4,17 +4,14 @@ import static org.apache.spark.sql.functions.col;
 import static org.apache.spark.sql.functions.when;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import org.apache.spark.ml.Pipeline;
-import org.apache.spark.ml.PipelineModel;
-import org.apache.spark.ml.PipelineStage;
 import org.apache.spark.ml.classification.LogisticRegression;
-import org.apache.spark.ml.feature.HashingTF;
+import org.apache.spark.ml.classification.LogisticRegressionModel;
+import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator;
+import org.apache.spark.ml.feature.ChiSqSelector;
 import org.apache.spark.ml.feature.Imputer;
 import org.apache.spark.ml.feature.ImputerModel;
 import org.apache.spark.ml.feature.StandardScaler;
-import org.apache.spark.ml.feature.Tokenizer;
 import org.apache.spark.ml.feature.VectorAssembler;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -27,71 +24,29 @@ import org.apache.spark.sql.SparkSession;
 
 public class LogisticRegressionMLlib {
 
+
+  private static final String OUTCOME_COLUMN_NAME = "Outcome";
+
+  private LogisticRegressionMLlib() {
+  }
+
   private static final String FEATURES_COLUMN_NAME = "features";
   private static final String SCALED_FEATURES_COLUMN_NAME = "scaled features";
 
-  public static void doMLlib() {
-
-    SparkSession spark = SparkSession.builder().appName("LogisticRegressionPipeline")
-        .getOrCreate();
-
-    // Prepare training documents, which are labeled.
-    Dataset<Row> training = spark.createDataFrame(Arrays.asList(
-        new JavaLabeledDocument(0L, "a b c d e spark", 1.0),
-        new JavaLabeledDocument(1L, "b d", 0.0),
-        new JavaLabeledDocument(2L, "spark f g h", 1.0),
-        new JavaLabeledDocument(3L, "hadoop mapreduce", 0.0)
-    ), JavaLabeledDocument.class);
-
-// Configure an ML pipeline, which consists of three stages: tokenizer, hashingTF, and lr.
-    Tokenizer tokenizer = new Tokenizer()
-        .setInputCol("text")
-        .setOutputCol("words");
-    HashingTF hashingTF = new HashingTF()
-        .setNumFeatures(1000)
-        .setInputCol(tokenizer.getOutputCol())
-        .setOutputCol("features");
-    LogisticRegression lr = new LogisticRegression()
-        .setMaxIter(10)
-        .setRegParam(0.001);
-    Pipeline pipeline = new Pipeline()
-        .setStages(new PipelineStage[]{tokenizer, hashingTF, lr});
-
-// Fit the pipeline to training documents.
-    PipelineModel model = pipeline.fit(training);
-
-// Prepare test documents, which are unlabeled.
-    Dataset<Row> test = spark.createDataFrame(Arrays.asList(
-        new JavaDocument(4L, "spark i j k"),
-        new JavaDocument(5L, "l m n"),
-        new JavaDocument(6L, "spark hadoop spark"),
-        new JavaDocument(7L, "apache hadoop")
-    ), JavaDocument.class);
-
-// Make predictions on test documents.
-    Dataset<Row> predictions = model.transform(test);
-    for (Row r : predictions.select("id", "text", "probability", "prediction").collectAsList()) {
-      System.out.println("(" + r.get(0) + ", " + r.get(1) + ") --> probability=" + r.get(2)
-          + ", prediction=" + r.get(3));
-    }
-  }
-
-  public static void doIt() {
+  public static void doLogisticRegression() {
     SparkSession spark = SparkSession.builder().appName("JavaLogRegDiabetes").getOrCreate();
 
     Dataset<Row> dataFrame = spark.read().format("csv").option("header", "true")
         .option("inferSchema", "true").load("./src/main/resources/nils/diabetes.csv");
 
-    String[] cols = dataFrame.columns();
     dataFrame.describe().select("Summary", "Pregnancies", "Glucose", "BloodPressure").show();
 
     dataFrame.select("Insulin", "Glucose", "BloodPressure", "SkinThickness", "BMI").show(5);
+    dataFrame = fillInNan(dataFrame, "Insulin");
     dataFrame = fillInNan(dataFrame, "Glucose");
     dataFrame = fillInNan(dataFrame, "BloodPressure");
     dataFrame = fillInNan(dataFrame, "SkinThickness");
     dataFrame = fillInNan(dataFrame, "BMI");
-    dataFrame = fillInNan(dataFrame, "Insulin");
-    dataFrame = fillInNan(dataFrame, "Glucose");
     dataFrame.select("Insulin", "Glucose", "BloodPressure", "SkinThickness", "BMI").show(5);
 
     dataFrame = imputeData(dataFrame);
@@ -103,11 +58,60 @@ public class LogisticRegressionMLlib {
     dataFrame = scalerizeFeatureColumn(dataFrame);
     dataFrame.select(FEATURES_COLUMN_NAME, SCALED_FEATURES_COLUMN_NAME).show(5);
 
-    Dataset<Row>[] splits = dataFrame.randomSplit(new double[]{0.7, 0.3}, 1234L);
+    Dataset<Row>[] splits = dataFrame.randomSplit(new double[]{0.8, 0.2}, 1234L);
     Dataset<Row> train = splits[0];
     Dataset<Row> test = splits[1];
-    System.out.println(train.select("Outcome").count());
-    System.out.println(test.select("Outcome").count());
+
+    double datasetSize = train.count();
+    double positives = train.where(OUTCOME_COLUMN_NAME + " == 1").count();
+    double negatives = train.where(OUTCOME_COLUMN_NAME + " == 0").count();
+    double percentageOfPositives = positives / datasetSize * 100;
+    double balancingRatio = negatives / datasetSize;
+
+    System.out.println("Number of positives is: " + positives);
+    System.out.println("Percentage of positives is: " + percentageOfPositives);
+    System.out.println("Balancing ratio is: " + balancingRatio);
+
+    train = train
+        .withColumn("classWeights", when(col(OUTCOME_COLUMN_NAME).equalTo("1"), balancingRatio)
+            .otherwise(1 - balancingRatio));
+    //train.select("classWeights", "Outcome").show(40);
+
+    ChiSqSelector chiSqSelector = new ChiSqSelector();
+    chiSqSelector.setFeaturesCol(SCALED_FEATURES_COLUMN_NAME);
+    chiSqSelector.setOutputCol("Aspect");
+    chiSqSelector.setLabelCol(OUTCOME_COLUMN_NAME);
+    chiSqSelector.setFpr(0.05);
+
+    train = chiSqSelector.fit(train).transform(train);
+    test = chiSqSelector.fit(test).transform(test);
+    //test.select("Aspect").show(5);
+
+    LogisticRegressionModel model = getLogisticRegressionModel(train);
+    Dataset<Row> predictTrain = model.transform(train);
+    Dataset<Row> predictTest = model.transform(test);
+    //predictTest.select("Outcome", "prediction").show(40);
+
+    BinaryClassificationEvaluator binaryClassificationEvaluator = new BinaryClassificationEvaluator();
+    binaryClassificationEvaluator.setRawPredictionCol("rawPrediction");
+    binaryClassificationEvaluator.setLabelCol(OUTCOME_COLUMN_NAME);
+
+    predictTest.select(OUTCOME_COLUMN_NAME, "rawPrediction", "prediction", "probability").show(5);
+
+    System.out.println("The area under ROC for train set is: " + binaryClassificationEvaluator
+        .evaluate(predictTrain));
+    System.out.println("The area under ROC for test set is: " + binaryClassificationEvaluator
+        .evaluate(predictTest));
+  }
+
+  private static LogisticRegressionModel getLogisticRegressionModel(Dataset<Row> train) {
+    LogisticRegression logisticRegression = new LogisticRegression();
+    logisticRegression.setLabelCol(OUTCOME_COLUMN_NAME);
+    logisticRegression.setFeaturesCol("Aspect");
+    logisticRegression.setWeightCol("classWeights");
+    logisticRegression.setMaxIter(10);
+
+    return logisticRegression.fit(train);
   }
 
   private static Dataset<Row> scalerizeFeatureColumn(Dataset<Row> dataFrame) {
@@ -121,8 +125,8 @@ public class LogisticRegressionMLlib {
     String[] columns = dataFrame.columns();
     ArrayList<String> list = new ArrayList<>();
     Collections.addAll(list, columns);
-    list.remove("Outcome");
-    columns = list.toArray(new String[list.size()]);
+    list.remove(OUTCOME_COLUMN_NAME);
+    columns = list.toArray(new String[0]);
     VectorAssembler vectorAssembler = new VectorAssembler();
     vectorAssembler.setInputCols(columns);
     vectorAssembler.setOutputCol(FEATURES_COLUMN_NAME);

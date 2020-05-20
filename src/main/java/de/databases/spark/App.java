@@ -1,6 +1,8 @@
 package de.databases.spark;
 
 import de.databases.spark.nils.LogisticRegressionMLlib;
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaSparkContext;
 
@@ -8,9 +10,13 @@ import org.apache.spark.api.java.JavaSparkContext;
 public class App {
 
   public static void main(String[] args) {
+
+    Logger.getLogger("org").setLevel(Level.OFF);
+    Logger.getLogger("akka").setLevel(Level.OFF);
+
     JavaSparkContext sc = getSparkContext();
 
-    LogisticRegressionMLlib.doIt();
+    LogisticRegressionMLlib.doLogisticRegression();
     //HelloWorld.doHelloWorld(sc);
     //MLlib.doMLlib(sc);
 
