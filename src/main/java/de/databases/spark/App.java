@@ -10,7 +10,7 @@ public class App {
   public static void main(String[] args) {
     JavaSparkContext sc = getSparkContext();
 
-    LogisticRegressionMLlib.doMLlib(sc);
+    LogisticRegressionMLlib.doIt();
     //HelloWorld.doHelloWorld(sc);
     //MLlib.doMLlib(sc);
 
