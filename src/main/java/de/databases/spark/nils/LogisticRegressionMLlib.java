@@ -19,19 +19,18 @@ import org.apache.spark.sql.SparkSession;
 
 //https://spark.apache.org/docs/latest/api/java/org/apache/spark/ml/feature/Imputer.html
 //https://spark.apache.org/docs/1.5.1/api/java/org/apache/spark/sql/DataFrame.html
+//https://spark.apache.org/docs/latest/api/java/org/apache/spark/sql/Dataset.html
 //https://spark.apache.org/docs/latest/api/java/org/apache/spark/ml/feature/VectorAssembler.html
 //https://medium.com/@dhiraj.p.rai/logistic-regression-in-spark-ml-8a95b5f5434c
-
+//https://www.kaggle.com/uciml/pima-indians-diabetes-database/version/1
 public class LogisticRegressionMLlib {
 
-
   private static final String OUTCOME_COLUMN_NAME = "Outcome";
+  private static final String FEATURES_COLUMN_NAME = "features";
+  private static final String SCALED_FEATURES_COLUMN_NAME = "scaled features";
 
   private LogisticRegressionMLlib() {
   }
-
-  private static final String FEATURES_COLUMN_NAME = "features";
-  private static final String SCALED_FEATURES_COLUMN_NAME = "scaled features";
 
   public static void doLogisticRegression() {
     SparkSession spark = SparkSession.builder().appName("JavaLogRegDiabetes").getOrCreate();
