@@ -61,7 +61,7 @@ public class LogisticRegressionMLlib {
     dataFrame = scalerizeFeatureColumn(dataFrame);
     dataFrame.select(FEATURES_COLUMN_NAME, SCALED_FEATURES_COLUMN_NAME).show(5);
 
-    Dataset<Row>[] splits = dataFrame.randomSplit(new double[]{0.8, 0.2}, 1234L);
+    Dataset<Row>[] splits = dataFrame.randomSplit(new double[]{0.8, 0.2}, 413L);
     Dataset<Row> train = splits[0];
     Dataset<Row> test = splits[1];
 
@@ -133,6 +133,7 @@ public class LogisticRegressionMLlib {
     cv.setEstimatorParamMaps(paramMap);
     cv.setEvaluator(binaryClassificationEvaluator);
     cv.setNumFolds(5);
+    cv.setParallelism(12);
     return cv;
   }
 
