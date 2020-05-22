@@ -13,6 +13,10 @@ import org.apache.spark.ml.feature.Imputer;
 import org.apache.spark.ml.feature.ImputerModel;
 import org.apache.spark.ml.feature.StandardScaler;
 import org.apache.spark.ml.feature.VectorAssembler;
+import org.apache.spark.ml.param.ParamMap;
+import org.apache.spark.ml.tuning.CrossValidator;
+import org.apache.spark.ml.tuning.CrossValidatorModel;
+import org.apache.spark.ml.tuning.ParamGridBuilder;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
@@ -101,6 +105,44 @@ public class LogisticRegressionMLlib {
         .evaluate(predictTrain));
     System.out.println("The area under ROC for test set is: " + binaryClassificationEvaluator
         .evaluate(predictTest));
+
+    LogisticRegression lr = new LogisticRegression();
+    lr.setLabelCol(OUTCOME_COLUMN_NAME);
+
+    ParamMap[] paramMap = buildParamMap(lr);
+
+    CrossValidator cv = getCrossValidator(binaryClassificationEvaluator, lr, paramMap);
+
+    CrossValidatorModel cvModel = cv.fit(train);
+    predictTrain = cvModel.transform(train);
+    predictTest = cvModel.transform(test);
+
+    System.out.println("The area under ROC for train set after Cross-Validation is: "
+        + binaryClassificationEvaluator
+        .evaluate(predictTrain));
+    System.out.println("The area under ROC for test set after Cross-Validation is: "
+        + binaryClassificationEvaluator
+        .evaluate(predictTest));
+  }
+
+  private static CrossValidator getCrossValidator(
+      BinaryClassificationEvaluator binaryClassificationEvaluator, LogisticRegression lr,
+      ParamMap[] paramMap) {
+    CrossValidator cv = new CrossValidator();
+    cv.setEstimator(lr);
+    cv.setEstimatorParamMaps(paramMap);
+    cv.setEvaluator(binaryClassificationEvaluator);
+    cv.setNumFolds(5);
+    return cv;
+  }
+
+  private static ParamMap[] buildParamMap(LogisticRegression lr) {
+    ParamGridBuilder paramGridBuilder = new ParamGridBuilder();
+    paramGridBuilder.addGrid(lr.aggregationDepth(), new int[]{2, 5, 10});
+    paramGridBuilder.addGrid(lr.elasticNetParam(), new double[]{0.0, 0.5, 1.0});
+    paramGridBuilder.addGrid(lr.maxIter(), new int[]{10, 100, 1000});
+    paramGridBuilder.addGrid(lr.regParam(), new double[]{0.01, 0.5, 2.0});
+    return paramGridBuilder.build();
   }
 
   private static LogisticRegressionModel getLogisticRegressionModel(Dataset<Row> train) {
